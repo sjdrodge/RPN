@@ -1,75 +1,94 @@
 module RPN
-    ( evaluateRPN
-    , infixToRPN
+    ( infixToPostfix
+    , evaluatePostfix
     ) where
 
-import Control.Monad
-import Data.List
-import Data.Maybe
+import Control.Monad.State
+import Data.List.Zipper (Zipper)
+import Data.Ord
+import Text.Read
+import qualified Data.List.Zipper as Z
+import qualified Data.Map as M
 
-data Operator = Operator { symbol :: String
-                         , associativity :: Ordering -- LT = left-associative, GT = right-associative
-                         , precedence :: Int
-                         , operation :: Double -> Double -> Double
-                         }
+-- TODO: type synonyms for associativity, and the stack
+-- TODO: better types for precedence and operation
 
-instance Show Operator where
-    show = show . symbol
+-- TODO: Add support for unary and ternary operators.
+data Token = Value Double
+           | Operator  { symbol :: String
+                       , associativity :: Ordering -- LT = left-associative, GT = right-associative
+                       , precedence :: Int
+                       , operation :: Double -> Double -> Double
+                       }
+           | Delimiter { symbol :: String
+                       , associativity :: Ordering
+                       }
 
-instance Read Operator where
-    readsPrec _ str = case find (\ op -> str == (symbol op)) operators of
-                        Nothing -> []
-                        Just op -> [(op,"")]
+instance Show Token where
+    show (Value x) = show x
+    show x = symbol x
 
-operators :: [Operator]
-operators = [ ( Operator "(" EQ 0 (\ _ _ -> 0 ) )
-            , ( Operator ")" EQ 0 (\ _ _ -> 0 ) )
-            , ( Operator "+" EQ 1 (+) )
-            , ( Operator "*" EQ 2 (*) )
-            , ( Operator "-" LT 1 (-) )
-            , ( Operator "/" LT 2 (/) )
-            , ( Operator "^" GT 3 (**) )
-            ]
+instance Read Token where
+    readsPrec x str
+        | (M.member str nonValueTokens) = [(nonValueTokens M.! str, "")]
+        | otherwise = do
+              (y, s) <- (readsPrec x str :: [(Double, String)])
+              return (Value y, s)
+                  where nonValueTokens = M.fromList $ map ( (,) =<< symbol )
+                            [ Delimiter "(" GT
+                            , Delimiter ")" LT
+                            , Operator  "+" EQ 6 (+)
+                            , Operator  "*" EQ 7 (*)
+                            , Operator  "-" LT 6 (-)
+                            , Operator  "/" LT 7 (/)
+                            , Operator  "^" GT 8 (**)
+                            ]
 
-readMaybe :: (Read a) => String -> Maybe a
-readMaybe str = case reads str of
-                  [(x,"")] -> Just x
-                  _ -> Nothing
+instance Eq Token where
+    (==) (Value x) (Value y) = x == y
+    (==) (Value _) _         = False
+    (==) _ (Value _)         = False
+    (==) x y                 = symbol x == symbol y
 
-evaluateToken :: [Double] -> String -> Maybe [Double]
-evaluateToken (x:y:ys) operatorString
-    | isJust mop = do
-        op <- liftM operation mop
-        return $ (op y x):ys
-    where mop = readMaybe operatorString
-evaluateToken xs numberString = liftM (:xs) (readMaybe numberString)
+instance Ord Token where
+    compare x@(Operator {}) y@(Operator {}) = comparing precedence x y
+    compare (Delimiter {}) (Operator {})    = LT
+    compare (Operator {})  (Delimiter {})   = GT
+    compare _ _                             = EQ
 
-evaluateRPN :: String -> Maybe Double
-evaluateRPN str = do
-    [result] <- foldM evaluateToken [] (words str)
+-- TODO: Better reporting of error conditions
+--      More than one value on stack after expression evaluated
+--      Not enough values to pop
+evaluateToken :: Token -> Zipper Token -> Maybe (Zipper Token)
+evaluateToken tok@(Value _) z             = return $ Z.insert tok z
+evaluateToken (Operator {operation=op}) z = do
+    (Value x) <- Z.safeCursor z
+    z' <- return $ Z.delete z
+    (Value y) <- Z.safeCursor z'
+    return $ Z.replace (Value (y `op` x)) z'
+
+evaluatePostfix :: [Token] -> Maybe Double
+evaluatePostfix xs = do
+    [(Value result)] <- liftM Z.toList . foldl (>>=) (return Z.empty) . map evaluateToken $ xs
     return result
 
-opPopPred :: Operator -> Operator -> Bool
-opPopPred op op' = case associativity op of
-                     GT -> precedence op < precedence op'
-                     _ -> precedence op <= precedence op'
+popUntil :: (Token -> Bool) -> Zipper Token -> Zipper Token
+popUntil p z
+    | (not . Z.endp) z && (not . p) (Z.cursor z) = popUntil p (Z.right z)
+    | otherwise                                  = z
 
-splitStack :: [Operator] -> Operator -> ([Operator], [Operator])
-splitStack xs op
-    | symbol op == "(" = ([], op:xs)
-    | symbol op == ")" = (ys, tail xs')
-    where (ys, xs') = break ( (==) "(" . symbol ) xs
-splitStack xs op = (ys, op:xs')
-    where (ys, xs') = span (opPopPred op) xs
+opPopPred :: Token -> Token -> Bool
+opPopPred op = case associativity op of
+                    GT -> (<=op)
+                    _  -> (<op)
 
-tokenToRPN :: ([Operator], [String]) -> String -> Maybe ([Operator], [String])
-tokenToRPN (xs, rpn) operatorString | isJust mop = return $ (xs', rpn ++ (map symbol ys))
-    where mop = readMaybe operatorString
-          op = fromJust mop
-          (ys, xs') = splitStack xs op
-tokenToRPN (xs, rpn) numberString = liftM (\ d -> (xs, rpn ++ [show d]) ) (readMaybe numberString :: Maybe Double)
+processToken :: Token -> Zipper Token -> Zipper Token -- Add error handling
+processToken tok@(Delimiter {symbol = "("}) = Z.insert tok -- push onto stack
+processToken     (Delimiter {symbol = ")"}) = Z.delete . popUntil (== read "(")
+processToken tok@(Operator {})              = Z.insert tok . popUntil (opPopPred tok)
+processToken tok@(Value _)                  = Z.push tok -- append to result
 
-infixToRPN :: String -> Maybe String
-infixToRPN str = do
-    (stack, result) <- foldM tokenToRPN ([], []) (words str)
-    return $ unwords (result ++ map symbol stack)
+infixToPostfix :: [Token] -> [Token]
+infixToPostfix = Z.toList . flip execState Z.empty . mapM modify . map processToken
+
+-- TODO: Add an actual user interface. Parse better (whitespace). Give meaningful errors. Quickcheck. Write the Agda version.
