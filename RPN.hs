@@ -1,6 +1,8 @@
 module RPN
     ( infixToPostfix
     , evaluatePostfix
+    , tokens
+    , untokens
     ) where
 
 import Control.Monad.State
@@ -92,3 +94,9 @@ infixToPostfix :: [Token] -> [Token]
 infixToPostfix = Z.toList . flip execState Z.empty . mapM modify . map processToken
 
 -- TODO: Add an actual user interface. Parse better (whitespace). Give meaningful errors. Quickcheck. Write the Agda version.
+
+tokens :: String -> Maybe [Token]
+tokens = mapM readMaybe . words
+
+untokens :: [Token] -> String
+untokens = unwords . map show
