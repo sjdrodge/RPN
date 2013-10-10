@@ -3,6 +3,7 @@ module RPN
     , evaluatePostfix
     , tokens
     , untokens
+    , isValidInfix
     ) where
 
 import Control.Monad.State
@@ -100,3 +101,17 @@ tokens = mapM readMaybe . words
 
 untokens :: [Token] -> String
 untokens = unwords . map show
+
+-- Validator --
+
+verifyInfix :: Int -> Bool -> [Token] -> Bool
+verifyInfix 0 False []                              = True
+verifyInfix x True  ((Delimiter {symbol = "("}):ys) = verifyInfix (x + 1) True ys
+verifyInfix 0 _     ((Delimiter {symbol = ")"}):_)  = False
+verifyInfix x False ((Delimiter {symbol = ")"}):ys) = verifyInfix (x - 1) False ys
+verifyInfix x True  ((Value _):ys)                  = verifyInfix x False ys
+verifyInfix x False ((Operator {}):ys)              = verifyInfix x True ys
+verifyInfix _ _ _                                   = False
+
+isValidInfix :: [Token] -> Bool
+isValidInfix = verifyInfix 0 True
