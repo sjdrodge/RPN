@@ -33,9 +33,9 @@ instance Show Token where
 
 instance Read Token where
     readsPrec x str
-        | (M.member str nonValueTokens) = [(nonValueTokens M.! str, "")]
-        | otherwise = do
-              (y, s) <- (readsPrec x str :: [(Double, String)])
+        | M.member str nonValueTokens = [(nonValueTokens M.! str, "")]
+        | otherwise                   = do
+              (y, s) <- readsPrec x str :: [(Double, String)]
               return (Value y, s)
                   where nonValueTokens = M.fromList $ map ( (,) =<< symbol )
                             [ Delimiter "(" GT
@@ -66,13 +66,13 @@ evaluateToken :: Token -> Zipper Token -> Maybe (Zipper Token)
 evaluateToken tok@(Value _) z             = return $ Z.insert tok z
 evaluateToken (Operator {operation=op}) z = do
     (Value x) <- Z.safeCursor z
-    z' <- return $ Z.delete z
+    let z' = Z.delete z
     (Value y) <- Z.safeCursor z'
     return $ Z.replace (Value (y `op` x)) z'
 
 evaluatePostfix :: [Token] -> Maybe Double
 evaluatePostfix xs = do
-    [(Value result)] <- liftM Z.toList . foldl (>>=) (return Z.empty) . map evaluateToken $ xs
+    [Value result] <- liftM Z.toList . foldl (>>=) (return Z.empty) . map evaluateToken $ xs
     return result
 
 popUntil :: (Token -> Bool) -> Zipper Token -> Zipper Token
@@ -92,7 +92,7 @@ processToken tok@(Operator {})              = Z.insert tok . popUntil (opPopPred
 processToken tok@(Value _)                  = Z.push tok -- append to result
 
 infixToPostfix :: [Token] -> [Token]
-infixToPostfix = Z.toList . flip execState Z.empty . mapM modify . map processToken
+infixToPostfix = Z.toList . flip execState Z.empty . mapM (modify . processToken)
 
 -- TODO: Add an actual user interface. Parse better (whitespace). Give meaningful errors. Quickcheck. Write the Agda version.
 
