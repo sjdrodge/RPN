@@ -9,27 +9,13 @@ module RPN
 import Control.Monad.State
 import Data.List.Zipper (Zipper)
 import Data.Ord
-import Text.Read
 import qualified Data.List.Zipper as Z
 import qualified Data.Map as M
 
+import RPNLex
+
 -- TODO: type synonyms for associativity, and the stack
 -- TODO: better types for precedence and operation
-
--- TODO: Add support for unary and ternary operators.
-data Token = Value Double
-           | Operator  { symbol :: String
-                       , associativity :: Ordering -- LT = left-associative, GT = right-associative
-                       , precedence :: Int
-                       , operation :: Double -> Double -> Double
-                       }
-           | Delimiter { symbol :: String
-                       , associativity :: Ordering
-                       }
-
-instance Show Token where
-    show (Value x) = show x
-    show x = symbol x
 
 instance Read Token where
     readsPrec x str
@@ -95,12 +81,6 @@ infixToPostfix :: [Token] -> [Token]
 infixToPostfix = Z.toList . flip execState Z.empty . mapM (modify . processToken)
 
 -- TODO: Add an actual user interface. Parse better (whitespace). Give meaningful errors. Quickcheck. Write the Agda version.
-
-tokens :: String -> Maybe [Token]
-tokens = mapM readMaybe . words
-
-untokens :: [Token] -> String
-untokens = unwords . map show
 
 -- Validator --
 
