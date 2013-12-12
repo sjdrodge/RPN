@@ -7,6 +7,7 @@ module RPN
     ) where
 
 import Control.Monad.State
+import Data.List
 import Data.List.Zipper (Zipper)
 import Data.Ord
 import qualified Data.List.Zipper as Z
@@ -58,7 +59,7 @@ evaluateToken (Operator {operation=op}) z = do
 
 evaluatePostfix :: [Token] -> Maybe Double
 evaluatePostfix xs = do
-    [Value result] <- liftM Z.toList . foldl (>>=) (return Z.empty) . map evaluateToken $ xs
+    [Value result] <- liftM Z.toList . foldl' (>>=) (return Z.empty) . map evaluateToken $ xs
     return result
 
 popUntil :: (Token -> Bool) -> Zipper Token -> Zipper Token
