@@ -3,6 +3,7 @@
 module RPNLex
     ( tokens
     , untokens
+    , nonValueTokens
     , Token (..)
     ) where
 
@@ -37,6 +38,7 @@ instance Show Token where
     show (Value x) = show x
     show x = symbol x
 
+nonValueTokens :: Map String Token
 nonValueTokens = M.fromList $ map ( (,) =<< symbol )
                  [ Delimiter "(" GT
                  , Delimiter ")" LT

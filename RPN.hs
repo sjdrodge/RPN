@@ -24,15 +24,6 @@ instance Read Token where
         | otherwise                   = do
               (y, s) <- readsPrec x str :: [(Double, String)]
               return (Value y, s)
-                  where nonValueTokens = M.fromList $ map ( (,) =<< symbol )
-                            [ Delimiter "(" GT
-                            , Delimiter ")" LT
-                            , Operator  "+" EQ 6 (+)
-                            , Operator  "*" EQ 7 (*)
-                            , Operator  "-" LT 6 (-)
-                            , Operator  "/" LT 7 (/)
-                            , Operator  "^" GT 8 (**)
-                            ]
 
 instance Eq Token where
     (==) (Value x) (Value y) = x == y
